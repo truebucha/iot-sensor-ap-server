@@ -10,77 +10,59 @@
 #include <Adafruit_BME280.h>
 #include <ESP8266WiFi.h>
 
-Adafruit_BME280 bme; // I2C
+
 // replace with your channel’s thingspeak API key,
+// tutorial https://learn.sparkfun.com/tutorials/esp8266-thing-hookup-guide/example-sketch-ap-web-server
 
-String apiKey = "F8GQ63NFVB7917HP";
-const char* ssid = "sensor";
-const char* password = "123123123";
-const char* server = "api.thingspeak.com";
-WiFiClient client;
-
+const char WiFiApName[] = "sensor-co";
+const char WiFiApSecret[] = "Sensor123";
+WiFiServer server(8090);
+Adafruit_BME280 bme; // I2C
 
 /**************************
  *   S E T U P
  **************************/
 
-void setup_wifi() {
+ void setupWiFi() {
+   WiFi.mode(WIFI_AP);
+   WiFi.softAP(WiFiApName, WiFiApSecret);
+   Serial.println("Finished with wifi setup");
+ }
 
-  delay(10);
-  // We start by connecting to a WiFi network
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
+ void initBme() {
+   Wire.begin(5,4);
+   if (!bme.begin(0x76)) {
+     Serial.println("Could not find a valid bme280 sensor, check wiring!");
+     ESP.deepSleep( 30 * 1000000, WAKE_RF_DISABLED);
+   } else {
+     Serial.println(F("BME280 found!"));
+   }
+   Serial.println("Finished with BME setup");
+ }
 
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
+void initHardware() {
+   pinMode(2, OUTPUT);
+   //initBme();
+   Serial.println("Finished with hardware setup");
+   // Don't need to set ANALOG_PIN as input,
+   // that's all it can be.
 }
 
 void setup() {
-  Serial.begin(115200);
-
-  pinMode(2, OUTPUT);
-
-  Wire.begin(5,4);
-  if (!bme.begin(0x76)) {
-    Serial.println("Could not find a valid BMP280 sensor, check wiring!");
-    ESP.deepSleep( 30 * 1000000, WAKE_RF_DISABLED);
-  } else {
-    Serial.println(F("BME280 found!"));
-  }
-
-  setup_wifi();
+  Serial.begin(74880);
+  delay(10);
+  Serial.println("Start board setup");
+  initHardware();
+  digitalWrite(2, HIGH);
+  setupWiFi();
+  server.begin();
+  digitalWrite(2, LOW);
+  Serial.println("Finished with setup");
 }
 
   /**************************
  *  L O O P
  **************************/
-
-void checkCommand() {
-if (Serial.available() > 0) {
-    String str = Serial.readString();
-
-    if (str.startsWith("wifi")) {
-
-      if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("disconnect wifi");
-        WiFi.disconnect();
-      } else {
-        Serial.println("connect wifi");
-        setup_wifi();
-      }
-    }
-  }
-}
 
 float miliVoltsUsingAnalogRead(int value) {
   int zeroVoltageValue = 5;
@@ -106,58 +88,86 @@ float ppmUsingMiliVolts(float mV) {
   return result;
 }
 
-void sendValues() {
-  if (client.connect(server,80) == false) {
-    client.stop();
-    return;
-  }
-  int analog = analogRead(0);
-  float mV = miliVoltsUsingAnalogRead(analog);
-  float coppm = ppmUsingMiliVolts(mV);
 
-  String postStr = apiKey;
-  postStr +="&field1=";
-  postStr += String(bme.readTemperature());
-  postStr +="&field2=";
-  postStr += String(bme.readPressure());
-  postStr +="&field3=";
-  postStr += String(bme.readHumidity());
-  postStr +="&field4=";
-  postStr += String(bme.readAltitude(1013.25));
-  postStr +="&field5=";
-  postStr += String(coppm);
-  postStr +="&field6=";
-  postStr += String(mV);
-  postStr +="&field7=";
-  postStr += String(analog);
-  postStr += "\r\n\r\n";
+int analog = 0;
+float mV = 0.0;
+float coPpm = 0.0;
+float temp = 0.0;
+float pressure = 0.0;
+float humidity = 0.0;
 
-  client.print("POST /update HTTP/1.1\n");
-  client.print("Host: api.thingspeak.com\n");
-  client.print("Connection: close\n");
-  client.print("X-THINGSPEAKAPIKEY: "+apiKey+"\n");
-  client.print("Content-Type: application/x-www-form-urlencoded\n");
-  client.print("Content-Length: ");
-  client.print(postStr.length());
-  client.print("\n\n");
-  client.print(postStr);
-
-  client.stop();
+void readBmeValues() {
+  float temp = bme.readTemperature();
+  float pressure = bme.readPressure();
+  float humidity = bme.readHumidity();
 }
 
-int count = 0;
-void loop() {
-    checkCommand();
-    if (WiFi.status() == WL_CONNECTED) {
-      digitalWrite(2, LOW);
-    } else {
-      digitalWrite(2, HIGH);
-    }
+void readCoValues() {
 
-    //float mV = readMiliVoltsFromSensor();
-    //float coppm = ppmUsingMiliVolts(mV);
-    // Serial.print("Value :");
-    // Serial.println(coppm);
-    // sendValues();
-    sendValues();
+  analog = analogRead(0);
+  mV = miliVoltsUsingAnalogRead(analog);
+  coPpm = ppmUsingMiliVolts(mV);
+
+  // String postStr = apiKey;
+  // postStr +="&field1=";
+  // postStr += String(bme.readTemperature());
+  // postStr +="&field2=";
+  // postStr += String(bme.readPressure());
+  // postStr +="&field3=";
+  // postStr += String(bme.readHumidity());
+  // postStr +="&field5=";
+  // postStr += String(coppm);
+  // postStr +="&field6=";
+  // postStr += String(mV);
+  // postStr +="&field7=";
+  // postStr += String(analog);
+  // postStr += "\r\n\r\n";
+  //
+  // client.print("POST /update HTTP/1.1\n");
+  // client.print("Host: api.thingspeak.com\n");
+  // client.print("Connection: close\n");
+  // client.print("X-THINGSPEAKAPIKEY: "+apiKey+"\n");
+  // client.print("Content-Type: application/x-www-form-urlencoded\n");
+  // client.print("Content-Length: ");
+  // client.print(postStr.length());
+  // client.print("\n\n");
+  // client.print(postStr);
+  //
+  // client.stop();
+}
+
+
+void loop() {
+  // Check if a client has connected
+  WiFiClient client = server.available();
+  if (!client) {
+    return;
+  }
+
+  digitalWrite(2, HIGH);
+
+  // Read the first line of the request
+  String req = client.readStringUntil('\r');
+  Serial.println(req);
+
+  client.flush();
+
+  // if (req.indexOf("/led/0") != -1)
+
+  // Prepare the response. Start with the common header:
+  readCoValues();
+
+  String s = "HTTP/1.1 200 OK\r\n";
+  s += "Content-Type: application/json\r\n\r\n";
+  s += "{\"coPpm\":";
+  s += String(coPpm);
+  s += "}";
+
+  // Send the response to the client
+  client.print(s);
+  delay(1);
+  Serial.println("Client disonnected");
+  digitalWrite(2, LOW);
+  // The client will actually be disconnected
+  // when the function returns and 'client' object is detroyed
 }
