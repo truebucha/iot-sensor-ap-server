@@ -42,7 +42,7 @@ Adafruit_BME280 bme; // I2C
 
 void initHardware() {
    pinMode(2, OUTPUT);
-   //initBme();
+   initBme();
    Serial.println("Finished with hardware setup");
    // Don't need to set ANALOG_PIN as input,
    // that's all it can be.
@@ -97,43 +97,15 @@ float pressure = 0.0;
 float humidity = 0.0;
 
 void readBmeValues() {
-  float temp = bme.readTemperature();
-  float pressure = bme.readPressure();
-  float humidity = bme.readHumidity();
+  temp = bme.readTemperature();
+  pressure = bme.readPressure();
+  humidity = bme.readHumidity();
 }
 
 void readCoValues() {
-
   analog = analogRead(0);
   mV = miliVoltsUsingAnalogRead(analog);
   coPpm = ppmUsingMiliVolts(mV);
-
-  // String postStr = apiKey;
-  // postStr +="&field1=";
-  // postStr += String(bme.readTemperature());
-  // postStr +="&field2=";
-  // postStr += String(bme.readPressure());
-  // postStr +="&field3=";
-  // postStr += String(bme.readHumidity());
-  // postStr +="&field5=";
-  // postStr += String(coppm);
-  // postStr +="&field6=";
-  // postStr += String(mV);
-  // postStr +="&field7=";
-  // postStr += String(analog);
-  // postStr += "\r\n\r\n";
-  //
-  // client.print("POST /update HTTP/1.1\n");
-  // client.print("Host: api.thingspeak.com\n");
-  // client.print("Connection: close\n");
-  // client.print("X-THINGSPEAKAPIKEY: "+apiKey+"\n");
-  // client.print("Content-Type: application/x-www-form-urlencoded\n");
-  // client.print("Content-Length: ");
-  // client.print(postStr.length());
-  // client.print("\n\n");
-  // client.print(postStr);
-  //
-  // client.stop();
 }
 
 
@@ -156,11 +128,26 @@ void loop() {
 
   // Prepare the response. Start with the common header:
   readCoValues();
+  readBmeValues();
 
   String s = "HTTP/1.1 200 OK\r\n";
   s += "Content-Type: application/json\r\n\r\n";
-  s += "{\"coPpm\":";
+  s += "{";
+  s += "\"coPpm\":";
   s += String(coPpm);
+  s += ",";
+
+  s += "\"temp\":";
+  s += String(temp);
+  s += ",";
+
+  s += "\"pressure\":";
+  s += String(pressure);
+  s += ",";
+
+  s += "\"humidity\":";
+  s += String(humidity);
+
   s += "}";
 
   // Send the response to the client
