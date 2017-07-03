@@ -42,7 +42,7 @@ Adafruit_BME280 bme; // I2C
 
 void initHardware() {
    pinMode(2, OUTPUT);
-   initBme();
+   //initBme();
    Serial.println("Finished with hardware setup");
    // Don't need to set ANALOG_PIN as input,
    // that's all it can be.
@@ -91,10 +91,10 @@ float ppmUsingMiliVolts(float mV) {
 
 int analog = 0;
 float mV = 0.0;
-float coPpm = 0.0;
-float temp = 0.0;
-float pressure = 0.0;
-float humidity = 0.0;
+float coPpm = 0.1;
+float temp = 20.0;
+float pressure = 97.8;
+float humidity = 43.0;
 
 void readBmeValues() {
   temp = bme.readTemperature();
@@ -127,8 +127,9 @@ void loop() {
   // if (req.indexOf("/led/0") != -1)
 
   // Prepare the response. Start with the common header:
-  readCoValues();
-  readBmeValues();
+//  readCoValues();
+//  readBmeValues();
+  coPpm += coPpm / 5;
 
   String s = "HTTP/1.1 200 OK\r\n";
   s += "Content-Type: application/json\r\n\r\n";
