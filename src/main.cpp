@@ -53,10 +53,10 @@ void setup() {
   delay(10);
   Serial.println("Start board setup");
   initHardware();
-  digitalWrite(2, HIGH);
+  digitalWrite(2, LOW);
   setupWiFi();
   server.begin();
-  digitalWrite(2, LOW);
+  digitalWrite(2, HIGH);
   Serial.println("Finished with setup");
 }
 
@@ -116,7 +116,7 @@ void loop() {
     return;
   }
 
-  digitalWrite(2, HIGH);
+  digitalWrite(2, LOW);
 
   // Read the first line of the request
   String req = client.readStringUntil('\r');
@@ -155,7 +155,7 @@ void loop() {
   client.print(s);
   delay(1);
   Serial.println("Client disonnected");
-  digitalWrite(2, LOW);
+  digitalWrite(2, HIGH);
   // The client will actually be disconnected
   // when the function returns and 'client' object is detroyed
 }
