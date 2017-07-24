@@ -71,7 +71,7 @@ Adafruit_BME280 bme; // I2C
 
 void initHardware() {
    pinMode(2, OUTPUT);
-   //initBme();
+   initBme();
    Serial.println("Finished with hardware setup");
    // Don't need to set ANALOG_PIN as input,
    // that's all it can be.
