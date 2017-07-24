@@ -14,26 +14,55 @@
 // replace with your channel’s thingspeak API key,
 // tutorial https://learn.sparkfun.com/tutorials/esp8266-thing-hookup-guide/example-sketch-ap-web-server
 
-const char WiFiApName[] = "sensor-co";
+const char WiFiApName[] = "sensor-co-";
 const char WiFiApSecret[] = "Sensor123";
 WiFiServer server(8090);
 Adafruit_BME280 bme; // I2C
+
+
 
 /**************************
  *   S E T U P
  **************************/
 
  void setupWiFi() {
+   byte mac[6];
+   WiFi.macAddress(mac);
+
+   Serial.print(F("MAC: "));
+   Serial.print(mac[5],HEX);
+   Serial.print(F(":"));
+   Serial.print(mac[4],HEX);
+   Serial.print(F(":"));
+   Serial.print(mac[3],HEX);
+   Serial.print(F(":"));
+   Serial.print(mac[2],HEX);
+   Serial.print(F(":"));
+   Serial.print(mac[1],HEX);
+   Serial.print(F(":"));
+   Serial.println(mac[0],HEX);
+
+   String apName = WiFiApName;
+   apName += String(mac[5], HEX);
+   apName += String(mac[4], HEX);
+
+   Serial.print(F("ApName: "));
+   Serial.println(apName);
+
    WiFi.mode(WIFI_AP);
-   WiFi.softAP(WiFiApName, WiFiApSecret);
-   Serial.println("Finished with wifi setup");
+
+   char ApName[15];
+   apName.toCharArray(ApName, 15);
+
+   WiFi.softAP(ApName, WiFiApSecret);
+   Serial.println(F("Finished with wifi setup"));
  }
 
  void initBme() {
    Wire.begin(5,4);
    if (!bme.begin(0x76)) {
      Serial.println("Could not find a valid bme280 sensor, check wiring!");
-     ESP.deepSleep( 30 * 1000000, WAKE_RF_DISABLED);
+     //ESP.deepSleep( 30 * 1000000, WAKE_RF_DISABLED);
    } else {
      Serial.println(F("BME280 found!"));
    }
@@ -42,7 +71,7 @@ Adafruit_BME280 bme; // I2C
 
 void initHardware() {
    pinMode(2, OUTPUT);
-   initBme();
+   //initBme();
    Serial.println("Finished with hardware setup");
    // Don't need to set ANALOG_PIN as input,
    // that's all it can be.
@@ -64,17 +93,17 @@ void setup() {
  *  L O O P
  **************************/
 
-float miliVoltsUsingAnalogRead(int value) {
-  int zeroVoltageValue = 5;
+int correctedAnalogRead(int value) {
+  int zeroVoltageValue = 10;
   int correctedValue = value - zeroVoltageValue;
   int input = correctedValue > 0 ? correctedValue : 0;
   // measured 3.12 v source stabilazed voltage
   //          Usource(mV) / stepsTotal * currentSteps
-  float result = (3120.0 / float(1024.0-zeroVoltageValue) * float(input));
+  // float result = (3120.0 / float(1024.0-zeroVoltageValue) * float(input));
   // Serial.print("read :");
   // Serial.println(value);
   // Serial.println(result);
-  return result;
+  return input;
 }
 
 float ppmUsingMiliVolts(float mV) {
@@ -90,7 +119,7 @@ float ppmUsingMiliVolts(float mV) {
 
 
 int analog = 0;
-float mV = 0.0;
+float corrected = 0.0;
 float coPpm = 0.0;
 float temp = 0.0;
 float pressure = 0.0;
@@ -104,12 +133,23 @@ void readBmeValues() {
 
 void readCoValues() {
   analog = analogRead(0);
-  mV = miliVoltsUsingAnalogRead(analog);
-  coPpm = ppmUsingMiliVolts(mV);
+  corrected = correctedAnalogRead(analog);
+  coPpm = corrected * 3.5;
 }
 
+void loop_check() {
+  delay(1e3);
+  readCoValues();
+  Serial.print(F("analog = "));
+  Serial.println(analog);
+  Serial.print(F("corrected = "));
+  Serial.println(corrected);
+  Serial.println(F("CO = "));
+  Serial.println(coPpm);
+  Serial.println(F("=="));
+}
 
-void loop() {
+void loop_work() {
   // Check if a client has connected
   WiFiClient client = server.available();
   if (!client) {
@@ -133,6 +173,11 @@ void loop() {
   String s = "HTTP/1.1 200 OK\r\n";
   s += "Content-Type: application/json\r\n\r\n";
   s += "{";
+
+  s += "\"analog\":";
+  s += String(analog);
+  s += ",";
+
   s += "\"coPpm\":";
   s += String(coPpm);
   s += ",";
@@ -157,4 +202,9 @@ void loop() {
   digitalWrite(2, LOW);
   // The client will actually be disconnected
   // when the function returns and 'client' object is detroyed
+}
+
+void loop() {
+  //loop_check();
+  loop_work();
 }
