@@ -10,6 +10,10 @@
 #include <Adafruit_BME280.h>
 #include <ESP8266WiFi.h>
 
+#define ADS1115_SERIAL_DEBUG
+#include "ADS1115.h"
+
+
 
 // replace with your channel’s thingspeak API key,
 // tutorial https://learn.sparkfun.com/tutorials/esp8266-thing-hookup-guide/example-sketch-ap-web-server
@@ -17,8 +21,10 @@
 const char WiFiApName[] = "sensor-co-";
 const char WiFiApSecret[] = "Sensor123";
 WiFiServer server(8090);
-Adafruit_BME280 bme; // I2C
 
+Adafruit_BME280 bme; // I2C
+ADS1115 ads0(0x48); 
+// Adafruit_ADS1115 ads; 
 
 
 /**************************
@@ -59,7 +65,6 @@ Adafruit_BME280 bme; // I2C
  }
 
  void initBme() {
-   Wire.begin(5,4);
    if (!bme.begin(0x76)) {
      Serial.println("Could not find a valid bme280 sensor, check wiring!");
      //ESP.deepSleep( 30 * 1000000, WAKE_RF_DISABLED);
@@ -69,16 +74,49 @@ Adafruit_BME280 bme; // I2C
    Serial.println("Finished with BME setup");
  }
 
+ void initADS() {
+  Serial.println(F("start ads"));
+  ads0.initialize();
+  Serial.println("Getting single-ended readings from AIN0..3");
+  
+  
+  if (!ads0.testConnection()) {
+    Serial.println(F("Could not find a valid ADS1115, check wiring!"));
+  } else {
+    Serial.println(F("ADS1115 found!"));
+  }
+
+  // adc0.setMode(ADS1115_MODE_CONTINUOUS);
+  ads0.setMode(ADS1115_MODE_SINGLESHOT);
+  ads0.setRate(ADS1115_RATE_8);
+  ads0.setGain(ADS1115_PGA_6P144);
+
+  #ifdef ADS1115_SERIAL_DEBUG
+  ads0.showConfigRegister();
+  Serial.print("HighThreshold="); Serial.println(ads0.getHighThreshold(),BIN);
+  Serial.print("LowThreshold="); Serial.println(ads0.getLowThreshold(),BIN);
+  #endif
+
+  // pinMode(1,INPUT_PULLUP);
+  // ads0.setConversionReadyPinMode();
+
+  Serial.println(F("Finished with ADS1115 setup"));
+}
+
 void initHardware() {
    pinMode(2, OUTPUT);
-   initBme();
+
+   Wire.begin(5,4);
+
+  //  initBme();
+   initADS();
    Serial.println("Finished with hardware setup");
    // Don't need to set ANALOG_PIN as input,
    // that's all it can be.
 }
 
 void setup() {
-  Serial.begin(74880);
+  Serial.begin(9600);
   delay(10);
   Serial.println("Start board setup");
   initHardware();
@@ -131,6 +169,44 @@ void readBmeValues() {
   humidity = bme.readHumidity();
 }
 
+float readADSValues() {
+  Serial.println("Sensor 1 ************************");
+  // Set the gain (PGA) +/- 1.024v
+  ads0.setGain(ADS1115_PGA_2P048);
+
+  // Get the number of counts of the accumulator
+  Serial.print("Counts for sensor 1 is:");
+  
+  // The below method sets the mux and gets a reading.
+  int sensorOneCounts=ads0.getConversionP0N1();  // counts up to 16-bits  
+  Serial.println(sensorOneCounts);
+
+  // To turn the counts into a voltage, we can use
+  Serial.print("Voltage for sensor 1 is:");
+  float value = sensorOneCounts * ads0.getMvPerCount();
+  Serial.println(value);
+  
+  Serial.println();
+   
+   
+  // // 2nd sensor is on P2/N3 (pins 6/7)
+  // Serial.println("Sensor 2 ************************");
+  // // Set the gain (PGA) +/- 0.256v
+  // adc0.setGain(ADS1115_PGA_0P256);
+
+  // // Manually set the MUX  // could have used the getConversionP* above
+  // adc0.setMultiplexer(ADS1115_MUX_P2_N3); 
+  // Serial.print("Counts for sensor 2 is:");
+  // Serial.println(adc0.getConversion());  
+
+  // Serial.print("mVoltage sensor 2 is:");
+  // Serial.println(adc0.getMilliVolts());  // Convenience method to calculate voltage
+
+  // Serial.println();
+  
+  return value;
+}
+
 void readCoValues() {
   analog = analogRead(0);
   corrected = correctedAnalogRead(analog);
@@ -167,15 +243,16 @@ void loop_work() {
   // if (req.indexOf("/led/0") != -1)
 
   // Prepare the response. Start with the common header:
-  readCoValues();
-  readBmeValues();
+  // readCoValues();
+  // readBmeValues();
+  float a = readADSValues();
 
   String s = "HTTP/1.1 200 OK\r\n";
   s += "Content-Type: application/json\r\n\r\n";
   s += "{";
 
   s += "\"analog\":";
-  s += String(analog);
+  s += String(a);
   s += ",";
 
   s += "\"coPpm\":";
