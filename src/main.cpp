@@ -89,7 +89,8 @@ ADS1115 ads0(0x48);
   // adc0.setMode(ADS1115_MODE_CONTINUOUS);
   ads0.setMode(ADS1115_MODE_SINGLESHOT);
   ads0.setRate(ADS1115_RATE_8);
-  ads0.setGain(ADS1115_PGA_6P144);
+  // ads0.setGain(ADS1115_PGA_0P512);
+  ads0.setGain(ADS1115_PGA_0P256);
 
   #ifdef ADS1115_SERIAL_DEBUG
   ads0.showConfigRegister();
@@ -172,7 +173,7 @@ void readBmeValues() {
 float readADSValues() {
   Serial.println("Sensor 1 ************************");
   // Set the gain (PGA) +/- 1.024v
-  ads0.setGain(ADS1115_PGA_2P048);
+  // ads0.setGain(ADS1115_PGA_0P256);
 
   // Get the number of counts of the accumulator
   Serial.print("Counts for sensor 1 is:");
@@ -183,8 +184,10 @@ float readADSValues() {
 
   // To turn the counts into a voltage, we can use
   Serial.print("Voltage for sensor 1 is:");
-  float value = sensorOneCounts * ads0.getMvPerCount();
-  Serial.println(value);
+  //  float value = sensorOneCounts * ads0.getMvPerCount();
+  float value = ads0.getMilliVolts();
+  //  float value = sensorOneCounts * 0.007813;
+  Serial.println(value, 8);
   
   Serial.println();
    
@@ -211,6 +214,14 @@ void readCoValues() {
   analog = analogRead(0);
   corrected = correctedAnalogRead(analog);
   coPpm = corrected * 3.5;
+}
+
+void loopMeasure() {
+  delay(1e3);
+  float a = readADSValues();
+  Serial.print(F("analog = "));
+  Serial.print(a, 8);
+  Serial.println(F(" mV"));
 }
 
 void loop_check() {
@@ -252,23 +263,23 @@ void loop_work() {
   s += "{";
 
   s += "\"analog\":";
-  s += String(a);
+  s += String(a, 8);
   s += ",";
 
   s += "\"coPpm\":";
-  s += String(coPpm);
+  s += String(coPpm, 8);
   s += ",";
 
   s += "\"temp\":";
-  s += String(temp);
+  s += String(temp, 8);
   s += ",";
 
   s += "\"pressure\":";
-  s += String(pressure);
+  s += String(pressure, 8);
   s += ",";
 
   s += "\"humidity\":";
-  s += String(humidity);
+  s += String(humidity, 8);
 
   s += "}";
 
@@ -284,4 +295,5 @@ void loop_work() {
 void loop() {
   //loop_check();
   loop_work();
+  // loopMeasure();
 }
