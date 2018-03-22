@@ -6,9 +6,11 @@
             "request": "launch",
             "cwd": "${workspaceRoot}",
             "name": "PlatformIO Debugger",
-            "target": "/Users/bucha/busyness/,github/iot-sensor-ap-server/.pioenvs/nodemcuv2/firmware.elf",
-            "gdbpath": "/Users/bucha/.platformio/penv/bin/piodebuggdb",
-            "autorun": [ "source .pioinit" ]
+            "target": "/home/truebucha/business/iot-sensor-ap-server/.pioenvs/esp12e/firmware.elf",
+            "gdbpath": "/home/truebucha/.platformio/penv/bin/piodebuggdb",
+            "autorun": [ "source .pioinit" ],
+            "preLaunchTask": "PlatformIO: Pre-Debug",
+            "internalConsoleOptions": "openOnSessionStart"
         }
     ]
 }
