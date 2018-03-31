@@ -14,6 +14,13 @@
 #include "ADS1115.h"
 
 
+#define led_green 13
+#define led_yellow 12
+#define led_red 14
+#define beeper 16
+#define led_chip_blue 2
+#define button 2
+
 
 // replace with your channel’s thingspeak API key,
 // tutorial https://learn.sparkfun.com/tutorials/esp8266-thing-hookup-guide/example-sketch-ap-web-server
@@ -27,6 +34,10 @@ ADS1115 ads0(0x48);
 // Adafruit_ADS1115 ads; 
 
 
+void printButton() {
+
+  Serial.print((F("button pressed")));
+}
 /**************************
  *   S E T U P
  **************************/
@@ -105,8 +116,15 @@ ADS1115 ads0(0x48);
 }
 
 void initHardware() {
-   pinMode(2, OUTPUT);
 
+  pinMode(led_chip_blue, OUTPUT);
+  pinMode(beeper, OUTPUT);
+  pinMode(led_green, OUTPUT);
+  pinMode(led_yellow, OUTPUT);
+  pinMode(led_red, OUTPUT);
+  pinMode(button, INPUT);
+
+  attachInterrupt(button, printButton, FALLING);
    Wire.begin(5,4);
 
   //  initBme();
@@ -121,11 +139,16 @@ void setup() {
   delay(10);
   Serial.println("Start board setup");
   initHardware();
-  digitalWrite(2, HIGH);
+  digitalWrite(led_chip_blue, HIGH);
   setupWiFi();
   server.begin();
-  digitalWrite(2, LOW);
+  digitalWrite(led_chip_blue, LOW);
   Serial.println("Finished with setup");
+
+  digitalWrite(beeper, LOW);
+  digitalWrite(led_red, HIGH);
+  digitalWrite(led_yellow, HIGH);
+  digitalWrite(led_green, HIGH);
 }
 
   /**************************
@@ -179,7 +202,7 @@ float readADSValues() {
   Serial.print("Counts for sensor 1 is:");
   
   // The below method sets the mux and gets a reading.
-  int sensorOneCounts=ads0.getConversionP0N1();  // counts up to 16-bits  
+  int sensorOneCounts=ads0.getConversionP2N3();  // counts up to 16-bits  
   Serial.println(sensorOneCounts);
 
   // To turn the counts into a voltage, we can use
@@ -210,7 +233,7 @@ float readADSValues() {
   return value;
 }
 
-void readCoValues() {
+void readChipAnalog() {
   analog = analogRead(0);
   corrected = correctedAnalogRead(analog);
   coPpm = corrected * 3.5;
@@ -218,15 +241,18 @@ void readCoValues() {
 
 void loopMeasure() {
   delay(1e3);
+
+  digitalWrite(led_chip_blue, HIGH);
   float a = readADSValues();
   Serial.print(F("analog = "));
   Serial.print(a, 8);
   Serial.println(F(" mV"));
+  digitalWrite(led_chip_blue, LOW);
 }
 
 void loop_check() {
   delay(1e3);
-  readCoValues();
+  readChipAnalog();
   Serial.print(F("analog = "));
   Serial.println(analog);
   Serial.print(F("corrected = "));
@@ -243,7 +269,7 @@ void loop_work() {
     return;
   }
 
-  digitalWrite(2, HIGH);
+  digitalWrite(led_chip_blue, HIGH);
 
   // Read the first line of the request
   String req = client.readStringUntil('\r');
@@ -287,7 +313,7 @@ void loop_work() {
   client.print(s);
   delay(1);
   Serial.println("Client disonnected");
-  digitalWrite(2, LOW);
+  digitalWrite(led_chip_blue, LOW);
   // The client will actually be disconnected
   // when the function returns and 'client' object is detroyed
 }
