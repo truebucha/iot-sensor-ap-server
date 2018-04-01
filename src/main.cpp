@@ -23,16 +23,60 @@
 #define greenLedPin 13
 #define yellowLedPin 12
 #define redLedPin 14
-#define beeper 16
+#define buzzerPin 16
 #define blueChipLedPin 2
-#define button 2
+#define buttonPin 2
 
 #define logToSerial Serial
+
+// ===========================================
+// CO alarm values
+
+#define greenCOTierValue 0.0000001
+#define yellowCOTierValue 0.00001
+#define redCOTierValue 0.001
 
 // =============================================
 // global vars
 
+typedef enum EventType {
+
+    NULL_EVENT = 0,
+    SINGLE_BEEP_EVENT = 1,
+    SINGLE_CO_MEASURE_EVENT = 2,
+    SINGLE_ENVIRONMENT_MEASURE_EVENT = 3,
+
+    ALARM_STATE_DID_CHANGE_EVENT = 4,
+
+    PERMANENT_BEEP_INITIATION_EVENT = 50, PERMANENT_BEEP_DISSMISAL_EVENT = 51,
+    GREEN_LEED_INITIATION_EVENT = 70, GREEN_LEED_DISSMISAL_EVENT = 71,
+    YELLOW_LEED_INITIATION_EVENT = 80, YELLOW_LEED_DISSMISAL_EVENT = 81,
+    RED_LEED_INITIATION_EVENT = 90, RED_LEED_DISSMISAL_EVENT = 91,
+
+} EventType_t;
+
+typedef enum BeepType {
+
+  NO_BEEP = 0, SINGLE_BEEP = 1, PERMANENT_BEEP = 2
+} BeepType_t;
+
+typedef enum AlarmType {
+
+    NO_ALARM = 0, GREEN_ALARM = 1, YELLOW_ALARM = 2, RED_ALARM = 3
+} AlarmType_t;
+
+
+const int loopCycleDelay = 1e2;
+
+const int maxEventCount = 20;
+int eventsCount = 0;
+EventType_t eventsQueue[maxEventCount];
+
+BeepType_t beepTypeValue;
+AlarmType_t alarmTypeValue;
+
 int analog = 0;
+float analogCO = 0;
 float corrected = 0.0;
 float coPpm = 0.0;
 float temp = 0.0;
@@ -54,6 +98,32 @@ ESP8266HTTPUpdateServer httpUpdater;
 
 Adafruit_BME280 bme; 
 ADS1115 ads0(0x48); 
+
+// ===========================================
+// alarm type determination logic
+
+AlarmType_t checkForAlarmTypeusingCoValue(float coLevel) {
+
+   if (coLevel >= redCOTierValue) {
+    
+    return RED_ALARM;
+  }
+
+   if (coLevel >= yellowCOTierValue) {
+    
+    return YELLOW_ALARM;
+  }
+
+  if (coLevel >= greenCOTierValue) {
+
+    return GREEN_ALARM;
+  }
+
+  if (coLevel < 0.000001) {
+
+    return NO_ALARM;
+  }
+}
 
 // ============================================
 // logging 
@@ -91,12 +161,54 @@ void LOG(T t, Args... args) {
 // ====================================
 // event handling
 
-void applyEventDelay(int delay) {
+void doActionForEvent(EventType_t event);
+
+void scheduleEvent(EventType_t event) {
+
+  if (eventsCount >= maxEventCount) {
+    return;
+  }
+
+  eventsQueue[eventsCount] = event;
+  eventsCount += 1;
+}
+
+EventType_t retriveEvent() {
+
+  int index = eventsCount - 1;
+
+  if (index < 0) {
+    return NULL_EVENT;
+  }
+
+  eventsCount -= 1;
+  EventType_t result = eventsQueue[index];
+  return result;
+}
+
+bool processEvents() {
+
+  EventType_t event = retriveEvent();
+  if (event == NULL_EVENT) {
+
+    return false;
+  }
+
+  while (event != NULL_EVENT) {
+
+    doActionForEvent(event);
+    yield();
+  }
+
+  return true;
+}
+
+void applyRepeatingEventsSheduleDelay(int delay) {
 
   eventDelayCountdown = delay;
 }
 
-bool couldProcessNextEvent() {
+bool couldSheduleNextRepeatingEventsRound() {
   
   if (eventDelayCountdown <= 1) {
 
@@ -180,6 +292,144 @@ float readADSValues() {
   return value;
 }
 
+// ============================
+// actions
+
+void doSingleBeep() {
+
+  if (beepTypeValue != NO_BEEP) {
+    return;
+  }
+
+  beepTypeValue = SINGLE_BEEP;
+
+  digitalWrite(buzzerPin, HIGH);
+  delay(5e2);
+  digitalWrite(buzzerPin, LOW);
+
+  beepTypeValue = NO_BEEP;
+
+  LOG(((F("made single beep sound"))));
+}
+
+void doDeviceSetupForAlarm(AlarmType_t alarm) {
+
+  switch (alarm) {
+
+      case GREEN_ALARM:
+
+        scheduleEvent(PERMANENT_BEEP_INITIATION_EVENT);
+        scheduleEvent(GREEN_LEED_INITIATION_EVENT);
+
+      break;
+
+      case YELLOW_ALARM:
+
+        scheduleEvent(PERMANENT_BEEP_INITIATION_EVENT);
+        scheduleEvent(YELLOW_LEED_INITIATION_EVENT);
+
+      break;
+
+      case RED_ALARM:
+
+        scheduleEvent(PERMANENT_BEEP_INITIATION_EVENT);
+        scheduleEvent(RED_LEED_INITIATION_EVENT);
+
+      break;
+
+      case NO_ALARM:
+      default:
+
+        scheduleEvent(PERMANENT_BEEP_DISSMISAL_EVENT);
+        scheduleEvent(GREEN_LEED_DISSMISAL_EVENT);
+        scheduleEvent(YELLOW_LEED_DISSMISAL_EVENT);
+        scheduleEvent(RED_LEED_DISSMISAL_EVENT);
+
+      break;
+  }
+}
+
+// =============================
+// events
+
+void doActionForEvent(EventType_t event) {
+  
+  switch (event) {
+
+    case SINGLE_BEEP_EVENT:
+
+      doSingleBeep();
+      LOG(((F("made SINGLE_BEEP_EVENT"))));
+    break;
+
+    case SINGLE_CO_MEASURE_EVENT: 
+
+      analogCO = readADSValues();
+      LOG(((F("made SINGLE_CO_MEASURE_EVENT"))));
+    break;
+
+    case ALARM_STATE_DID_CHANGE_EVENT: 
+
+      doDeviceSetupForAlarm(alarmTypeValue);
+      LOG(((F("made ALARM_STATE_DID_CHANGE_EVENT"))));
+    break;
+
+    case PERMANENT_BEEP_INITIATION_EVENT: 
+
+      beepTypeValue = PERMANENT_BEEP;
+      digitalWrite(buzzerPin, HIGH);
+      LOG(((F("made PERMANENT_BEEP_INITIATION_EVENT"))));
+    break;
+
+    case PERMANENT_BEEP_DISSMISAL_EVENT: 
+
+      beepTypeValue = NO_BEEP;
+      digitalWrite(buzzerPin, LOW);
+      LOG(((F("made PERMANENT_BEEP_DISSMISAL_EVENT"))));
+    break;
+
+    case GREEN_LEED_INITIATION_EVENT: 
+
+      digitalWrite(greenLedPin, HIGH);
+      LOG(((F("made GREEN_LEED_INITIATION_EVENT"))));
+    break;
+
+    case GREEN_LEED_DISSMISAL_EVENT: 
+
+      digitalWrite(greenLedPin, LOW);
+      LOG(((F("made GREEN_LEED_DISSMISAL_EVENT"))));
+    break;
+
+    case YELLOW_LEED_INITIATION_EVENT: 
+
+      digitalWrite(yellowLedPin, HIGH);
+      LOG(((F("made YELLOW_LEED_INITIATION_EVENT"))));
+    break;
+
+    case YELLOW_LEED_DISSMISAL_EVENT: 
+
+      digitalWrite(yellowLedPin, LOW);
+      LOG(((F("made YELLOW_LEED_DISSMISAL_EVENT"))));
+    break;
+
+    case RED_LEED_INITIATION_EVENT: 
+
+      digitalWrite(redLedPin, HIGH);
+      LOG(((F("made RED_LEED_INITIATION_EVENT"))));
+    break;
+
+    case RED_LEED_DISSMISAL_EVENT: 
+
+      digitalWrite(redLedPin, LOW);
+      LOG(((F("made RED_LEED_DISSMISAL_EVENT"))));
+    break;
+
+    default:
+
+    break;
+  }
+}
+
 // =============================
 // responds
 
@@ -224,14 +474,14 @@ void respondWithMeasured() {
   // readCoValues();
   // readBmeValues();
 
-  float a = readADSValues();
+  
 
   // String s = "HTTP/1.1 200 OK\r\n";
   // s += "Content-Type: application/json\r\n\r\n";
   String response = String((F("{")));
 
   response += String((F("\"analog\":")));
-  response += String(a, 8);
+  response += String(analogCO, 8);
   response += String((F(",")));
 
   response += String((F("\"coPpm\":")));
@@ -288,9 +538,17 @@ String wifiApName() {
    return result;
 }
 
-void printButton() {
+void handleButtonInterrupt() {
 
   LOG(((F("button pressed"))));
+
+  if (beepTypeValue == NO_BEEP) {
+
+    scheduleEvent(SINGLE_BEEP_EVENT);
+  } else {
+
+    scheduleEvent(PERMANENT_BEEP_DISSMISAL_EVENT);
+  }
 }
 
 /**************************
@@ -365,22 +623,22 @@ void printButton() {
 void setupSOC() {
 
   pinMode(blueChipLedPin, OUTPUT);
-  pinMode(beeper, OUTPUT);
+  pinMode(buzzerPin, OUTPUT);
   pinMode(greenLedPin, OUTPUT);
   pinMode(yellowLedPin, OUTPUT);
   pinMode(redLedPin, OUTPUT);
-  pinMode(button, INPUT);
+  pinMode(buzzerPin, INPUT);
 
   Wire.begin(5,4);
 
-  attachInterrupt(button, printButton, FALLING);
+  attachInterrupt(buttonPin, handleButtonInterrupt, FALLING);
 
   LOG((F("SOC setup finished")));
 }
 
 void prepareTestPinsState() {
 
-  digitalWrite(beeper, LOW);
+  digitalWrite(buzzerPin, LOW);
   digitalWrite(redLedPin, HIGH);
   digitalWrite(yellowLedPin, HIGH);
   digitalWrite(greenLedPin, HIGH);
@@ -388,8 +646,6 @@ void prepareTestPinsState() {
 }
 
 void setup() {
-
-  
 
   logToSerial.begin(74880);
   delay(10);
@@ -438,9 +694,6 @@ float ppmUsingMiliVolts(float mV) {
   return result;
 }
 
-
-
-
 void readBmeValues() {
   temp = bme.readTemperature();
   pressure = bme.readPressure();
@@ -477,9 +730,27 @@ void loop_check() {
 }
 
 void loop() {
-  //loop_check();
+  // loop_check();
   // loopMeasure();
 
-  httpServer.handleClient();
-  yield();
+  if (couldSheduleNextRepeatingEventsRound()) {
+
+    scheduleEvent(SINGLE_CO_MEASURE_EVENT);
+    scheduleEvent(SINGLE_ENVIRONMENT_MEASURE_EVENT);
+    applyRepeatingEventsSheduleDelay(1000);
+  }
+
+  if (processEvents()) {
+
+    AlarmType_t incomingAlarmType = checkForAlarmTypeusingCoValue(analogCO);
+
+    if (incomingAlarmType != alarmTypeValue) {
+
+      scheduleEvent(ALARM_STATE_DID_CHANGE_EVENT);
+    }
+  }
+
+  httpServer.handleClient();  
+
+  delay(loopCycleDelay);
 }
