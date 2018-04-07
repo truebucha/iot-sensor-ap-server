@@ -718,7 +718,7 @@ void handleButtonInterrupt() {
 
  void setupServer() {
 
-  MDNS.begin(socNetworkName);
+  
 
   httpUpdater.setup(&httpServer, "/update");
 
@@ -730,7 +730,9 @@ void handleButtonInterrupt() {
 
   httpServer.begin();
 
+  MDNS.begin(socNetworkName);
   MDNS.addService("http", "tcp", 80);
+  
   LOG((F("Finished server setup")));
  }
 
