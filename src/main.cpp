@@ -42,6 +42,27 @@
 // =============================================
 // global vars
 
+const int stationTimeoutSec = 20;
+const int apnTimeoutSec = 120; 
+unsigned long apnStartTime = 0;
+unsigned long lastEventCheckTime = 0;
+
+// mDNS
+
+const char socNetworkName[] = "cosensor";
+
+//AP
+const char apnName[] = "CoSensor";
+const char apnPass[] = "Sensor123";
+
+const IPAddress localIP(192,168,4,1);
+const IPAddress gateway(192,168,4,1);
+const IPAddress subnet(255,255,255,0);
+
+// Station
+const char satationAp[]  = "***";
+const char satationPass[] = "***";
+
 const int socLoopCycleDelay = 1e2;
 const int eventsLoopDelay = 2e3;
 const int repeatingEventsDelay = 5e3;
@@ -92,9 +113,6 @@ float pressure = 0.0;
 float humidity = 0.0;
 
 // ============================================
-
-const char WiFiApName[] = "sensor-co";
-const char WiFiApSecret[] = "Sensor123";
 
 String logStorage = String();
 
@@ -273,8 +291,113 @@ bool couldProcessEventsLoop() {
 
   return result;
 }
-  
 
+// ===========================
+// wifi
+
+String wifiApName() {
+
+   byte mac[6];
+   WiFi.macAddress(mac);
+   String macString = String((F("MAC: ")));
+   macString += String(mac[5],HEX);
+   macString += String((F(":")));
+   macString += String(mac[4],HEX);
+   macString += String((F(":")));
+   macString += String(mac[3],HEX);
+   macString += String((F(":")));
+   macString += String(mac[2],HEX);
+   macString += String((F(":")));
+   macString += String(mac[1],HEX);
+   macString += String((F(":")));
+   macString += String(mac[0],HEX);
+   LOG(macString);
+
+   String result = String(apnName);
+   result += String((F("-")));
+   result += String(mac[5], HEX);
+   result += String(mac[4], HEX);
+
+   return result;
+}
+
+void checkWifiConnection() {
+
+  unsigned long apnUptime = 0;
+
+  if (WiFi.getMode() == WIFI_AP) {
+
+    apnUptime = millis() - apnStartTime;
+
+    String uptimeMessage = String((F("Apn uptime: ")));
+    uptimeMessage += String(apnUptime / 1000);
+    uptimeMessage += String((F("s")));
+    LOG(uptimeMessage);
+  }
+
+  if (WiFi.getMode() == WIFI_AP
+     && WiFi.softAPgetStationNum() == 0 
+     && apnUptime > (apnTimeoutSec * 1000)) {
+
+    LOG((F("Disconnect AP during no clients")));
+    WiFi.softAPdisconnect(true);
+  }
+
+  if (WiFi.getMode() == WIFI_AP
+     || WiFi.status() == WL_CONNECTED) {
+
+    LOG((F("WiFi Ok")));
+    return;
+  } 
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(satationAp, satationPass);
+
+  LOG((F("Connecting station")));
+
+  int ms = 0;
+  int timeout = stationTimeoutSec * 1000;
+
+  while (WiFi.status() != WL_CONNECTED) {
+
+    delay(500);
+    ms += 500;
+    LOG((F(".")));
+    if (ms > timeout) {
+
+      LOG((F("Aborted during timeout")));
+      WiFi.disconnect();
+      break;
+    }
+  }
+
+  if  (WiFi.status() == WL_CONNECTED) {
+
+    LOG((F("Station connected after ")));
+    LOG(ms);
+    LOG((F("ms, IP address: ")));
+    LOG(WiFi.localIP().toString());
+    return;
+  }
+
+  LOG((F("Starting Access Point...")));
+  WiFi.mode(WIFI_AP);
+
+
+
+  WiFi.softAPConfig(localIP, gateway, subnet);
+  if (WiFi.softAP(wifiApName().c_str(), apnPass) == false) {
+
+    return;
+  }
+
+  apnStartTime = millis();
+
+  LOG((F("Acceess Point is up, IP address: ")));
+  LOG(WiFi.softAPIP().toString());
+
+}
+  
 // ===========================
 // State
 
@@ -305,20 +428,18 @@ float readADSValues() {
   // ads0.setGain(ADS1115_PGA_0P256);
 
   // Get the number of counts of the accumulator
-  LOG((F("Counts for sensor 1 is:")));
+  // LOG((F("Counts for sensor 1 is:")));
   
-  // The below method sets the mux and gets a reading.
-  int sensorOneCounts=ads0.getConversionP2N3();  // counts up to 16-bits  
-  LOG(sensorOneCounts);
+  // // The below method sets the mux and gets a reading.
+  // int sensorOneCounts=ads0.getConversionP2N3();  // counts up to 16-bits  
+  // LOG(sensorOneCounts);
 
   // To turn the counts into a voltage, we can use
-  LOG((F("Voltage for sensor 1 is:")));
-  //  float value = sensorOneCounts * ads0.getMvPerCount();
-  float value = ads0.getMilliVolts();
   //  float value = sensorOneCounts * 0.007813;
-  
-  LOG(String(value, 8));   
-   
+  float value = ads0.getMilliVolts();
+  LOG(String((F("Voltage for sensor 1 is:"))) + String(value, 8));
+  //  float value = sensorOneCounts * ads0.getMvPerCount();
+
   // // 2nd sensor is on P2/N3 (pins 6/7)
   // LOG((F("Sensor 2 ************************")));
   // // Set the gain (PGA) +/- 0.256v
@@ -576,33 +697,7 @@ void respondWithMeasured() {
 }
 
 // =============================
-// WiFi
-
-String wifiApName() {
-
-   byte mac[6];
-   WiFi.macAddress(mac);
-   String macString = String((F("MAC: ")));
-   macString += String(mac[5],HEX);
-   macString += String((F(":")));
-   macString += String(mac[4],HEX);
-   macString += String((F(":")));
-   macString += String(mac[3],HEX);
-   macString += String((F(":")));
-   macString += String(mac[2],HEX);
-   macString += String((F(":")));
-   macString += String(mac[1],HEX);
-   macString += String((F(":")));
-   macString += String(mac[0],HEX);
-   LOG(macString);
-
-   String result = String(WiFiApName);
-   result += String((F("-")));
-   result += String(mac[5], HEX);
-   result += String(mac[4], HEX);
-
-   return result;
-}
+// interrupts
 
 void handleButtonInterrupt() {
 
@@ -621,15 +716,9 @@ void handleButtonInterrupt() {
  *   S E T U P
  **************************/
 
- void setupWiFi() {
-  
-   WiFi.softAP(wifiApName().c_str(), WiFiApSecret);
-   LOG((F("Finished with wifi setup")));
- }
-
  void setupServer() {
 
-  MDNS.begin("cosensor");
+  MDNS.begin(socNetworkName);
 
   httpUpdater.setup(&httpServer, "/update");
 
@@ -722,13 +811,12 @@ void setup() {
   LOG((F("Starting setup of the device")));
 
   setupSOC();
+  setupBme();
 
-  //  setupBme();
   setupADS();
 
   setupServer();
-
-  setupWiFi();
+  WiFi.mode(WIFI_STA);
 
   //prepareTestPinsState();
   
@@ -801,6 +889,8 @@ void loop_check() {
 void eventsLoop() {
 
   LOG((F("[ Running Events Loop")));
+
+  checkWifiConnection();
 
   if (couldSheduleRepeatingEvents()) {
 
