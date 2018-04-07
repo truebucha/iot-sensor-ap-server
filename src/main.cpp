@@ -20,6 +20,9 @@
 #include "ADS1115.h"
 
 
+#define sdaPin 5
+#define slcPin 4
+
 #define greenLedPin 13
 #define yellowLedPin 12
 #define redLedPin 14
@@ -38,6 +41,14 @@
 
 // =============================================
 // global vars
+
+const int socLoopCycleDelay = 1e2;
+const int eventsLoopDelay = 2e3;
+const int repeatingEventsDelay = 5e3;
+
+unsigned long systemTime = 0;
+unsigned long repeatingEventsNextTimeRun = 0;
+unsigned long eventsLoopNextTimeRun = 0;
 
 typedef enum EventType {
 
@@ -65,9 +76,6 @@ typedef enum AlarmType {
     NO_ALARM = 0, GREEN_ALARM = 1, YELLOW_ALARM = 2, RED_ALARM = 3
 } AlarmType_t;
 
-
-const int loopCycleDelay = 1e2;
-
 const int maxEventCount = 20;
 int eventsCount = 0;
 EventType_t eventsQueue[maxEventCount];
@@ -83,9 +91,6 @@ float temp = 0.0;
 float pressure = 0.0;
 float humidity = 0.0;
 
-unsigned long lastEventCheckTime = 0;
-int eventDelayCountdown = 0;
-
 // ============================================
 
 const char WiFiApName[] = "sensor-co";
@@ -93,7 +98,7 @@ const char WiFiApSecret[] = "Sensor123";
 
 String logStorage = String();
 
-ESP8266WebServer httpServer(8090);
+ESP8266WebServer httpServer(80);
 ESP8266HTTPUpdateServer httpUpdater;
 
 Adafruit_BME280 bme; 
@@ -171,6 +176,8 @@ void scheduleEvent(EventType_t event) {
 
   eventsQueue[eventsCount] = event;
   eventsCount += 1;
+
+  LOG(String((F("Sheduled:"))) + String(event, DEC));
 }
 
 EventType_t retriveEvent() {
@@ -183,52 +190,90 @@ EventType_t retriveEvent() {
 
   eventsCount -= 1;
   EventType_t result = eventsQueue[index];
+
+  LOG(String((F("Retrived:"))) + String(result, DEC));
+
   return result;
 }
 
 bool processEvents() {
 
-  EventType_t event = retriveEvent();
-  if (event == NULL_EVENT) {
+  bool result = false;
 
-    return false;
-  }
+  EventType_t event = retriveEvent();
 
   while (event != NULL_EVENT) {
 
     doActionForEvent(event);
     yield();
+    event = retriveEvent();
+
+    result = true;
   }
 
-  return true;
+  return result;
 }
 
-void applyRepeatingEventsSheduleDelay(int delay) {
-
-  eventDelayCountdown = delay;
-}
-
-bool couldSheduleNextRepeatingEventsRound() {
+// bool applyTimedDelayFor(int delay, int * inOutCountdown) {
   
-  if (eventDelayCountdown <= 1) {
+//   *inOutCountdown = delay;
+//   // LOG(String((F("delay: "))) + (String(*countdown, DEC)));
+// }
 
-    eventDelayCountdown = 0;
-    return true;
-  }
+bool couldDoTimedFor(unsigned long * inOutCountdown, int nextTimeAfterDelay) {
+
+  // LOG(String((F("timed: "))) + (String(*countdown, DEC)));
 
   unsigned long currentTime = millis();
-  unsigned long timeElapsed = currentTime - lastEventCheckTime;
-  lastEventCheckTime = currentTime;
+
+  if (systemTime > currentTime) {
+
+    // soc goes througth overflow of unsigned long 
+    // and begin from 0 again
+    // we reset events timers
+
+    repeatingEventsNextTimeRun = 0;
+    eventsLoopNextTimeRun = 0;
+  }
+
+  systemTime = currentTime;
+
+  if (*inOutCountdown < systemTime) {
+
+    *inOutCountdown += nextTimeAfterDelay;
+    return true;
+  }
 
   // String uptimeMessage = String((F((F("event time elapsed: ")))));
   // uptimeMessage += String(timeElapsed);
   // uptimeMessage += String((F((F("ms")))));
   // LOG(uptimeMessage);
 
-  eventDelayCountdown -= timeElapsed;
-  
   return false;
 }
+
+
+// =========================================
+// soc event timers
+
+bool couldSheduleRepeatingEvents() {
+
+  bool result = couldDoTimedFor(&repeatingEventsNextTimeRun, repeatingEventsDelay);
+
+  // LOG(String((F("schedule countdown: ")))+ (String(repeatingEventScheduleCountdown, DEC)));
+
+  return result;
+}
+
+bool couldProcessEventsLoop() {
+
+  bool result = couldDoTimedFor(&eventsLoopNextTimeRun, eventsLoopDelay);
+
+  // LOG(String((F("events loop countdown: ")))+ (String(eventsLoopCountDown, DEC)));
+
+  return result;
+}
+  
 
 // ===========================
 // State
@@ -358,70 +403,82 @@ void doActionForEvent(EventType_t event) {
 
     case SINGLE_BEEP_EVENT:
 
+      LOG(((F("{ start SINGLE_BEEP_EVENT"))));
       doSingleBeep();
-      LOG(((F("made SINGLE_BEEP_EVENT"))));
+      LOG(((F("made SINGLE_BEEP_EVENT }"))));
+
     break;
 
     case SINGLE_CO_MEASURE_EVENT: 
 
+      LOG(((F("{ start SINGLE_CO_MEASURE_EVENT"))));
       analogCO = readADSValues();
-      LOG(((F("made SINGLE_CO_MEASURE_EVENT"))));
+      LOG(((F("made SINGLE_CO_MEASURE_EVENT }"))));
     break;
 
     case ALARM_STATE_DID_CHANGE_EVENT: 
 
+      LOG(((F("{ start ALARM_STATE_DID_CHANGE_EVENT"))));
       doDeviceSetupForAlarm(alarmTypeValue);
-      LOG(((F("made ALARM_STATE_DID_CHANGE_EVENT"))));
+      LOG(((F("made ALARM_STATE_DID_CHANGE_EVENT }"))));
     break;
 
     case PERMANENT_BEEP_INITIATION_EVENT: 
 
+      LOG(((F("{ start PERMANENT_BEEP_INITIATION_EVENT"))));
       beepTypeValue = PERMANENT_BEEP;
       digitalWrite(buzzerPin, HIGH);
-      LOG(((F("made PERMANENT_BEEP_INITIATION_EVENT"))));
+      LOG(((F("made PERMANENT_BEEP_INITIATION_EVENT }"))));
     break;
 
     case PERMANENT_BEEP_DISSMISAL_EVENT: 
 
+      LOG(((F("{ start PERMANENT_BEEP_DISSMISAL_EVENT"))));
       beepTypeValue = NO_BEEP;
       digitalWrite(buzzerPin, LOW);
-      LOG(((F("made PERMANENT_BEEP_DISSMISAL_EVENT"))));
+      LOG(((F("made PERMANENT_BEEP_DISSMISAL_EVENT }"))));
     break;
 
     case GREEN_LEED_INITIATION_EVENT: 
 
+      LOG(((F("{ start made GREEN_LEED_INITIATION_EVENT"))));
       digitalWrite(greenLedPin, HIGH);
-      LOG(((F("made GREEN_LEED_INITIATION_EVENT"))));
+      LOG(((F("made GREEN_LEED_INITIATION_EVENT }"))));
     break;
 
     case GREEN_LEED_DISSMISAL_EVENT: 
 
+      LOG(((F("{ start GREEN_LEED_DISSMISAL_EVENT"))));
       digitalWrite(greenLedPin, LOW);
-      LOG(((F("made GREEN_LEED_DISSMISAL_EVENT"))));
+      LOG(((F("made GREEN_LEED_DISSMISAL_EVENT }"))));
     break;
 
     case YELLOW_LEED_INITIATION_EVENT: 
 
+      LOG(((F("{ start YELLOW_LEED_INITIATION_EVENT"))));
       digitalWrite(yellowLedPin, HIGH);
-      LOG(((F("made YELLOW_LEED_INITIATION_EVENT"))));
+      LOG(((F("made YELLOW_LEED_INITIATION_EVENT }"))));
     break;
 
     case YELLOW_LEED_DISSMISAL_EVENT: 
 
+      LOG(((F("{ start YELLOW_LEED_DISSMISAL_EVENT"))));
       digitalWrite(yellowLedPin, LOW);
-      LOG(((F("made YELLOW_LEED_DISSMISAL_EVENT"))));
+      LOG(((F("made YELLOW_LEED_DISSMISAL_EVENT }"))));
     break;
 
     case RED_LEED_INITIATION_EVENT: 
 
+      LOG(((F("{ start RED_LEED_INITIATION_EVENT"))));
       digitalWrite(redLedPin, HIGH);
-      LOG(((F("made RED_LEED_INITIATION_EVENT"))));
+      LOG(((F("made RED_LEED_INITIATION_EVENT }"))));
     break;
 
     case RED_LEED_DISSMISAL_EVENT: 
 
+      LOG(((F("{ start RED_LEED_DISSMISAL_EVENT"))));
       digitalWrite(redLedPin, LOW);
-      LOG(((F("made RED_LEED_DISSMISAL_EVENT"))));
+      LOG(((F("made RED_LEED_DISSMISAL_EVENT }"))));
     break;
 
     default:
@@ -447,13 +504,24 @@ void respondWithLog() {
   response += String(WiFi.getMode() == WIFI_AP ? (F("YES")):(F("NO")));
   // response += String(F("<br/>apnStartTime: "));
   // response += String(apnStartTime);
-
-  // response += String(F("<br/>Guard Pin Raised: "));
-  // response += String(digitalRead(guardPin) == 1 ? (F("YES")):(F("NO")));
-  // response += String(F("<br/>Alarm Pin Rased: "));
-  // response += String(digitalRead(alarmPin) == 1 ? (F("YES")):(F("NO")));
-  // response += String(F("<br/>Next Event Countdown: "));
-  // response += String(eventDelayCountdown);
+  response += String(F("<br/>System time: "));
+  response += String(systemTime, DEC);
+  response += String(F("<br/>Next Event Loop Countdown: "));
+  response += String(long(eventsLoopNextTimeRun - systemTime), DEC);
+  response += String(F("<br/>Next Repeating Events Countdown: "));
+  response += String(long(repeatingEventsNextTimeRun - systemTime), DEC);
+  response += String(F("<br/>============================= "));
+  response += String(F("<br/>Co voltage: "));
+  response += String(analogCO, DEC);
+  response += String(F("<br/>============================= "));
+  response += String(F("<br/>Buzzer Pin Rased: "));
+  response += String(digitalRead(buzzerPin) == 1 ? (F("YES")):(F("NO")));
+  response += String(F("<br/>Green Pin Rased: "));
+  response += String(digitalRead(greenLedPin) == 1 ? (F("YES")):(F("NO")));
+  response += String(F("<br/>Yellow Pin Rased: "));
+  response += String(digitalRead(yellowLedPin) == 1 ? (F("YES")):(F("NO")));
+  response += String(F("<br/>Red Pin Rased: "));
+  response += String(digitalRead(redLedPin) == 1 ? (F("YES")):(F("NO")));
   // response += String(F("<br/>Modem Network Connection Sequental Failures Count: "));
   // response += String(modemConnectionSequentalFailuresCount);
   response += String((F("</p><pre>")));
@@ -473,8 +541,6 @@ void respondWithMeasured() {
   // Prepare the response. Start with the common header:
   // readCoValues();
   // readBmeValues();
-
-  
 
   // String s = "HTTP/1.1 200 OK\r\n";
   // s += "Content-Type: application/json\r\n\r\n";
@@ -514,24 +580,24 @@ void respondWithMeasured() {
 
 String wifiApName() {
 
-  byte mac[6];
+   byte mac[6];
    WiFi.macAddress(mac);
-
-   LOG((F("MAC: ")));
-   LOG(mac[5],HEX);
-   LOG((F(":")));
-   LOG(mac[4],HEX);
-   LOG((F(":")));
-   LOG(mac[3],HEX);
-   LOG((F(":")));
-   LOG(mac[2],HEX);
-   LOG((F(":")));
-   LOG(mac[1],HEX);
-   LOG((F(":")));
-   LOG(mac[0],HEX);
+   String macString = String((F("MAC: ")));
+   macString += String(mac[5],HEX);
+   macString += String((F(":")));
+   macString += String(mac[4],HEX);
+   macString += String((F(":")));
+   macString += String(mac[3],HEX);
+   macString += String((F(":")));
+   macString += String(mac[2],HEX);
+   macString += String((F(":")));
+   macString += String(mac[1],HEX);
+   macString += String((F(":")));
+   macString += String(mac[0],HEX);
+   LOG(macString);
 
    String result = String(WiFiApName);
-   result += String((F(" - ")));
+   result += String((F("-")));
    result += String(mac[5], HEX);
    result += String(mac[4], HEX);
 
@@ -563,11 +629,11 @@ void handleButtonInterrupt() {
 
  void setupServer() {
 
-  MDNS.begin("espco");
+  MDNS.begin("cosensor");
 
   httpUpdater.setup(&httpServer, "/update");
 
-  // httpServer.on("/",[](){httpServer.send(200,"text/plain","Hello World!");});
+  //httpServer.on("/",[](){httpServer.send(200,"text/plain","Hello World!");});
 
   httpServer.on("/", respondWithState);
   httpServer.on("/log", respondWithLog);
@@ -576,6 +642,7 @@ void handleButtonInterrupt() {
   httpServer.begin();
 
   MDNS.addService("http", "tcp", 80);
+  LOG((F("Finished server setup")));
  }
 
  void setupBme() {
@@ -583,6 +650,8 @@ void handleButtonInterrupt() {
    if (!bme.begin(0x76)) {
      LOG((F("Could not find a valid bme280 sensor, check wiring!")));
      //ESP.deepSleep( 30 * 1000000, WAKE_RF_DISABLED);
+     return;
+
    } else {
      LOG((F("BME280 found!")));
    }
@@ -591,13 +660,13 @@ void handleButtonInterrupt() {
 
  void setupADS() {
 
-  LOG((F("start ads")));
-  ads0.initialize();
-  LOG((F("Getting single-ended readings from AIN0..3")));
-  
+  LOG((F("Starting ADS1115 Setup")));
+  ads0.initialize();  
   
   if (!ads0.testConnection()) {
     LOG((F("Could not find a valid ADS1115, check wiring!")));
+    return;
+
   } else {
     LOG((F("ADS1115 found!")));
   }
@@ -609,9 +678,9 @@ void handleButtonInterrupt() {
   ads0.setGain(ADS1115_PGA_0P256);
 
   #ifdef ADS1115_SERIAL_DEBUG
-  ads0.showConfigRegister();
-  LOG((F("HighThreshold="))); LOG(ads0.getHighThreshold(),BIN);
-  LOG((F("LowThreshold="))); LOG(ads0.getLowThreshold(),BIN);
+    ads0.showConfigRegister();
+    LOG((F("HighThreshold="))); LOG(String(ads0.getHighThreshold(),BIN));
+    LOG((F("LowThreshold="))); LOG(String(ads0.getLowThreshold(),BIN));
   #endif
 
   // pinMode(1,INPUT_PULLUP);
@@ -629,7 +698,7 @@ void setupSOC() {
   pinMode(redLedPin, OUTPUT);
   pinMode(buzzerPin, INPUT);
 
-  Wire.begin(5,4);
+  Wire.begin(sdaPin, slcPin);
 
   attachInterrupt(buttonPin, handleButtonInterrupt, FALLING);
 
@@ -729,15 +798,18 @@ void loop_check() {
   LOG((F("==")));
 }
 
-void loop() {
-  // loop_check();
-  // loopMeasure();
+void eventsLoop() {
 
-  if (couldSheduleNextRepeatingEventsRound()) {
+  LOG((F("[ Running Events Loop")));
+
+  if (couldSheduleRepeatingEvents()) {
+
+    LOG((F("< Start Scheduling Repeting Events To EventsLoop")));
 
     scheduleEvent(SINGLE_CO_MEASURE_EVENT);
     scheduleEvent(SINGLE_ENVIRONMENT_MEASURE_EVENT);
-    applyRepeatingEventsSheduleDelay(1000);
+
+    LOG((F("Scheduled Repeting Events To EventsLoop >")));
   }
 
   if (processEvents()) {
@@ -749,8 +821,20 @@ void loop() {
       scheduleEvent(ALARM_STATE_DID_CHANGE_EVENT);
     }
   }
+  LOG((F("Finished Events Loop ]")));
+  LOG((F("[---   ---   ---  ---  ---]")));
+}
+
+void loop() {
+  // loop_check();
+  // loopMeasure();
+
+  if (couldProcessEventsLoop()) {
+
+    eventsLoop();
+  }
 
   httpServer.handleClient();  
 
-  delay(loopCycleDelay);
+  delay(socLoopCycleDelay);
 }
