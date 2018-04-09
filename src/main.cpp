@@ -28,9 +28,9 @@
 #define redLedPin 14
 
 // ver 2
-//  #define buzzerPin 1
+ #define buzzerPin 1
 //ver 1
-#define buzzerPin 16
+// #define buzzerPin 16
 
 #define blueChipLedPin 2
 #define buttonPin 2
@@ -66,8 +66,8 @@ const IPAddress gateway(192,168,4,1);
 const IPAddress subnet(255,255,255,0);
 
 // Station
-const char satationAp[]  = "***";
-const char satationPass[] = "***";
+const char satationAp[]  = "puntodeacceso";
+const char satationPass[] = "hotspot131415";
 
 const int socLoopCycleDelay = 1e2;
 const int eventsLoopDelay = 2e3;
@@ -429,23 +429,84 @@ void checkWifiConnection() {
 }
   
 // ===========================
-// State
+// State Reports
 
-String stateString() {
+String alarmTypeStringUsing(AlarmType_t alarm) {
+
+  String result = String();
+
+  switch(alarm) {
+    case LETHAL_ALARM:
+      result = String(F(" LETHAT"));
+    break;
+    case RED_ALARM:
+      result = String(F(" RED"));
+    break;
+    case YELLOW_ALARM:
+      result = String(F(" YELLOW"));
+    break;
+    case GREEN_ALARM:
+      result = String(F(" GREEN"));
+    break;
+    default:
+      result = String(F(" NO ALARM"));
+    break;
+  }
+  return result;
+}
+
+String socReportString() {
   
   String result = String();
 
-  result += ((F("\ndevice config\n")));
+  result += ((F("<br/>device config\n")));
 
-  result += ((F("\nSketch size: ")));
+  result += ((F("<br/>Sketch size: ")));
   result += String(ESP.getSketchSize());
 
-  result += ((F("\nFree size: ")));
+  result += ((F("<br/>Free size: ")));
   result += String(ESP.getFreeSketchSpace());
 
-  result += ((F("\nFree Heap: ")));
+  result += ((F("<br/>Free Heap: ")));
   result += String(ESP.getFreeHeap());
 
+  return result;
+}
+
+String statusReport() {
+
+  String result = String(F("<br/>in Access Point mode: "));
+  result += String(WiFi.getMode() == WIFI_AP ? (F("YES")):(F("NO")));
+  // result += String(F("<br/>apnStartTime: "));
+  // result += String(apnStartTime);
+  result += String(F("<br/>System time: "));
+  result += String(systemTime, DEC);
+  result += String(F("<br/>Next Event Loop Countdown: "));
+  result += String(long(eventsLoopNextTimeRun - systemTime), DEC);
+  result += String(F("<br/>Next Repeating Events Countdown: "));
+  result += String(long(repeatingEventsNextTimeRun - systemTime), DEC);
+  result += String(F("<br/>============================= "));
+  result += String(F("<br/>Co zero level: "));
+  result += String(analogCOZero, DEC);
+  result += String(F("<br/>Co voltage: "));
+  result += String(analogCO, DEC);
+  result += String(F("<br/>temp: "));
+  result += String(temp, DEC);
+  result += String(F("<br/>humidity: "));
+  result += String(humidity, DEC);
+  result += String(F("<br/>pressure: "));
+  result += String(pressure, DEC);
+  result += String(F("<br/>Alarm Type: "));
+  result += alarmTypeStringUsing(alarmTypeValue);
+  result += String(F("<br/>============================= "));
+  result += String(F("<br/>Buzzer Pin Rased: "));
+  result += String(digitalRead(buzzerPin) == 1 ? (F("YES")):(F("NO")));
+  result += String(F("<br/>Green Pin Rased: "));
+  result += String(digitalRead(greenLedPin) == 1 ? (F("YES")):(F("NO")));
+  result += String(F("<br/>Yellow Pin Rased: "));
+  result += String(digitalRead(yellowLedPin) == 1 ? (F("YES")):(F("NO")));
+  result += String(F("<br/>Red Pin Rased: "));
+  result += String(digitalRead(redLedPin) == 1 ? (F("YES")):(F("NO")));
   return result;
 }
 
@@ -698,70 +759,24 @@ void doActionForEvent(EventType_t event) {
 
 void respondWithState() {
 
-  String response = stateString();
+  String response = String((F("<html><body><p>")));
+  response += socReportString();
+  response += String(F("</p><br>============<p>"));
+  response += statusReport();
+  response += String(F("</p><br>============<p>"));
+  response += String(F("<br>Links:"));
+  response += String(F("<br><li><a href=\"\\log\">log</a>"));
+  response += String(F("</p><br>============"));
+  response += String(F("</body></html>"));
 
-  httpServer.send(200, (F("text/plain")), response.c_str() );
-}
-
-String alarmTypeStringUsing(AlarmType_t alarm) {
-
-  String result = String();
-
-  switch(alarm) {
-    case LETHAL_ALARM:
-      result = String(F(" LETHAT"));
-    break;
-    case RED_ALARM:
-      result = String(F(" RED"));
-    break;
-    case YELLOW_ALARM:
-      result = String(F(" YELLOW"));
-    break;
-    case GREEN_ALARM:
-      result = String(F(" GREEN"));
-    break;
-    default:
-      result = String(F(" NO ALARM"));
-    break;
-  }
-  return result;
+  httpServer.send(200, (F("text/html")), response.c_str() );
 }
 
 void respondWithLog() {
 
   String response = String(F("<html><body><p>"));
-  response += String(F("<br/>in Access Point mode: "));
-  response += String(WiFi.getMode() == WIFI_AP ? (F("YES")):(F("NO")));
-  // response += String(F("<br/>apnStartTime: "));
-  // response += String(apnStartTime);
-  response += String(F("<br/>System time: "));
-  response += String(systemTime, DEC);
-  response += String(F("<br/>Next Event Loop Countdown: "));
-  response += String(long(eventsLoopNextTimeRun - systemTime), DEC);
-  response += String(F("<br/>Next Repeating Events Countdown: "));
-  response += String(long(repeatingEventsNextTimeRun - systemTime), DEC);
-  response += String(F("<br/>============================= "));
-  response += String(F("<br/>Co zero level: "));
-  response += String(analogCOZero, DEC);
-  response += String(F("<br/>Co voltage: "));
-  response += String(analogCO, DEC);
-  response += String(F("<br/>temp: "));
-  response += String(temp, DEC);
-  response += String(F("<br/>humidity: "));
-  response += String(humidity, DEC);
-  response += String(F("<br/>pressure: "));
-  response += String(pressure, DEC);
-  response += String(F("<br/>Alarm Type: "));
-  response += alarmTypeStringUsing(alarmTypeValue);
-  response += String(F("<br/>============================= "));
-  response += String(F("<br/>Buzzer Pin Rased: "));
-  response += String(digitalRead(buzzerPin) == 1 ? (F("YES")):(F("NO")));
-  response += String(F("<br/>Green Pin Rased: "));
-  response += String(digitalRead(greenLedPin) == 1 ? (F("YES")):(F("NO")));
-  response += String(F("<br/>Yellow Pin Rased: "));
-  response += String(digitalRead(yellowLedPin) == 1 ? (F("YES")):(F("NO")));
-  response += String(F("<br/>Red Pin Rased: "));
-  response += String(digitalRead(redLedPin) == 1 ? (F("YES")):(F("NO")));
+  response += statusReport();
+  
   // response += String(F("<br/>Modem Network Connection Sequental Failures Count: "));
   // response += String(modemConnectionSequentalFailuresCount);
   response += String((F("</p><pre>")));
@@ -774,7 +789,7 @@ void respondWithLog() {
 void respondWithMeasured() {
   // Check if a client has connected
 
-  digitalWrite(blueChipLedPin, HIGH);
+  // digitalWrite(blueChipLedPin, HIGH);
 
   // if (req.indexOf((F("/led/0"))) != -1)
 
@@ -810,7 +825,7 @@ void respondWithMeasured() {
   // Send the response to the client
   httpServer.send(200, (F("application/json")), response.c_str());
   LOG((F("Client disonnected")));
-  digitalWrite(blueChipLedPin, LOW);
+  // digitalWrite(blueChipLedPin, LOW);
   // The client will actually be disconnected
   // when the function returns and 'client' object is detroyed
 }
