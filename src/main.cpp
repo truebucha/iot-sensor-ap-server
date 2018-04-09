@@ -40,10 +40,10 @@
 // ===========================================
 // CO alarm values
 
-#define greenCOTierValue 0.0012 //10ppm * 120
-#define yellowCOTierValue 0.0024 //20ppm * 120
-#define redCOTierValue 0.0048 // 40ppm * 120
-#define lethalCOTierValue 0.0096 //80ppm * 120
+#define greenCOTierValue 0.078 //10ppm * 127
+#define yellowCOTierValue 0.156 //20ppm * 127
+#define redCOTierValue 0.312 // 40ppm * 127
+#define lethalCOTierValue 0.624 //80ppm * 127
 
 // =============================================
 // global vars
@@ -497,14 +497,18 @@ float readADSValues() {
 
 float readADSZeroValue() {
 
-  float first = readADSValues();
-  delay(200);
-  float second = readADSValues();
-  delay(200);
-  float third = readADSValues();
-  delay(200);
+  float result = 0;
+  for (int i=0; i < 5; i++) {
 
-  float result = max(max(first, second), third);
+    float measurement = readADSValues();
+    if (measurement > result) {
+
+      result = measurement;
+    }
+
+    delay(200);
+  }
+
   return result;
 }
 
