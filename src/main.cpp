@@ -27,10 +27,7 @@
 #define yellowLedPin 12
 #define redLedPin 14
 
-// ver 2
- #define buzzerPin 1
-//ver 1
-// #define buzzerPin 16
+#define buzzerPin 1
 
 #define blueChipLedPin 2
 #define buttonPin 2
@@ -66,8 +63,8 @@ const IPAddress gateway(192,168,4,1);
 const IPAddress subnet(255,255,255,0);
 
 // Station
-const char satationAp[]  = "puntodeacceso";
-const char satationPass[] = "hotspot131415";
+const char satationAp[]  = "***";
+const char satationPass[] = "***";
 
 const int socLoopCycleDelay = 1e2;
 const int eventsLoopDelay = 2e3;
