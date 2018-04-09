@@ -29,8 +29,9 @@
 
 #define buzzerPin 1
 
-#define serverActionLedPin 20
 #define buttonPin 2
+
+// #define serverActionLedPin 20
 
 #define logToSerial Serial
 
@@ -63,8 +64,8 @@ const IPAddress gateway(192,168,4,1);
 const IPAddress subnet(255,255,255,0);
 
 // Station
-const char satationAp[]  = "***";
-const char satationPass[] = "***";
+const char satationAp[]  = "*";
+const char satationPass[] = "*";
 
 const int socLoopCycleDelay = 1e2;
 const int eventsLoopDelay = 2e3;
@@ -180,7 +181,7 @@ AlarmType_t checkForAlarmTypeusingCoValue(float coLevel) {
 
 void cutLog() {
 
-  if (logStorage.length() > 2000) {
+  if (logStorage.length() > 10000) {
 
     logStorage = logStorage.substring(100);
   }
