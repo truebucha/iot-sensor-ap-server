@@ -28,9 +28,9 @@
 #define redLedPin 14
 
 // ver 2
- #define buzzerPin 1
+//  #define buzzerPin 1
 //ver 1
-// #define buzzerPin 16
+#define buzzerPin 16
 
 #define blueChipLedPin 2
 #define buttonPin 2
@@ -40,10 +40,10 @@
 // ===========================================
 // CO alarm values
 
-#define greenCOTierValue 0.0006 //5ppm * 120
+#define greenCOTierValue 0.0012 //10ppm * 120
 #define yellowCOTierValue 0.0024 //20ppm * 120
-#define redCOTierValue 0.0096 // 80ppm * 120
-#define lethalCOTierValue 0.0192 //160ppm * 120
+#define redCOTierValue 0.0048 // 40ppm * 120
+#define lethalCOTierValue 0.0096 //80ppm * 120
 
 // =============================================
 // global vars
@@ -66,8 +66,8 @@ const IPAddress gateway(192,168,4,1);
 const IPAddress subnet(255,255,255,0);
 
 // Station
-const char satationAp[]  = "puntodeacceso";
-const char satationPass[] = "hotspot131415";
+const char satationAp[]  = "***";
+const char satationPass[] = "***";
 
 const int socLoopCycleDelay = 1e2;
 const int eventsLoopDelay = 2e3;
@@ -85,8 +85,9 @@ typedef enum EventType {
     SINGLE_BEEP_EVENT = 1,
     SINGLE_CO_MEASURE_EVENT = 2,
     SINGLE_ENVIRONMENT_MEASURE_EVENT = 3,
+    SINGLE_CO_ZERO_MEASURE_EVENT = 4,
 
-    ALARM_STATE_DID_CHANGE_EVENT = 4,
+    ALARM_STATE_DID_CHANGE_EVENT = 5,
 
     PERMANENT_BEEP_INITIATION_EVENT = 50,
     SLOW_BEEP_INITIATION_EVENT = 51,
@@ -127,6 +128,7 @@ BeepType_t beepTypeValue = NO_BEEP;
 AlarmType_t alarmTypeValue = NO_ALARM;
 
 int analog = 0;
+float analogCOZero = 0;
 float analogCO = 0;
 float testCO = 0;
 float corrected = 0.0;
@@ -493,6 +495,19 @@ float readADSValues() {
   return value;
 }
 
+float readADSZeroValue() {
+
+  float first = readADSValues();
+  delay(200);
+  float second = readADSValues();
+  delay(200);
+  float third = readADSValues();
+  delay(200);
+
+  float result = max(max(first, second), third);
+  return result;
+}
+
 // ============================
 // actions
 
@@ -566,8 +581,15 @@ void doActionForEvent(EventType_t event) {
     case SINGLE_CO_MEASURE_EVENT: 
 
       LOG(((F("{ start SINGLE_CO_MEASURE_EVENT"))));
-      analogCO = readADSValues();
+      analogCO = readADSValues() - analogCOZero;
       LOG(((F("made SINGLE_CO_MEASURE_EVENT }"))));
+    break;
+
+    case SINGLE_CO_ZERO_MEASURE_EVENT:
+
+      LOG(((F("{ start SINGLE_CO_ZERO_MEASURE_EVENT"))));
+      analogCOZero = readADSZeroValue();
+      LOG(((F("made SINGLE_CO_ZERO_MEASURE_EVENT }"))));
     break;
 
     case SINGLE_ENVIRONMENT_MEASURE_EVENT: 
@@ -677,6 +699,30 @@ void respondWithState() {
   httpServer.send(200, (F("text/plain")), response.c_str() );
 }
 
+String alarmTypeStringUsing(AlarmType_t alarm) {
+
+  String result = String();
+
+  switch(alarm) {
+    case LETHAL_ALARM:
+      result = String(F(" LETHAT"));
+    break;
+    case RED_ALARM:
+      result = String(F(" RED"));
+    break;
+    case YELLOW_ALARM:
+      result = String(F(" YELLOW"));
+    break;
+    case GREEN_ALARM:
+      result = String(F(" GREEN"));
+    break;
+    default:
+      result = String(F(" NO ALARM"));
+    break;
+  }
+  return result;
+}
+
 void respondWithLog() {
 
   String response = String(F("<html><body><p>"));
@@ -691,6 +737,8 @@ void respondWithLog() {
   response += String(F("<br/>Next Repeating Events Countdown: "));
   response += String(long(repeatingEventsNextTimeRun - systemTime), DEC);
   response += String(F("<br/>============================= "));
+  response += String(F("<br/>Co zero level: "));
+  response += String(analogCOZero, DEC);
   response += String(F("<br/>Co voltage: "));
   response += String(analogCO, DEC);
   response += String(F("<br/>temp: "));
@@ -700,7 +748,7 @@ void respondWithLog() {
   response += String(F("<br/>pressure: "));
   response += String(pressure, DEC);
   response += String(F("<br/>Alarm Type: "));
-  response += String(alarmTypeValue, DEC);
+  response += alarmTypeStringUsing(alarmTypeValue);
   response += String(F("<br/>============================= "));
   response += String(F("<br/>Buzzer Pin Rased: "));
   response += String(digitalRead(buzzerPin) == 1 ? (F("YES")):(F("NO")));
@@ -890,6 +938,8 @@ void setup() {
   //prepareTestPinsState();
   
   LOG((F("Finished setup of the device")));
+
+  scheduleEvent(SINGLE_CO_ZERO_MEASURE_EVENT);
 }
 
   /**************************
