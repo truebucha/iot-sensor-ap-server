@@ -29,7 +29,7 @@
 
 #define buzzerPin 1
 
-#define blueChipLedPin 2
+#define serverActionLedPin 20
 #define buttonPin 2
 
 #define logToSerial Serial
@@ -786,7 +786,9 @@ void respondWithLog() {
 void respondWithMeasured() {
   // Check if a client has connected
 
-  // digitalWrite(blueChipLedPin, HIGH);
+  #ifdef serverActionLedPin
+    digitalWrite(serverActionLedPin, HIGH);
+  #endif
 
   // if (req.indexOf((F("/led/0"))) != -1)
 
@@ -822,7 +824,11 @@ void respondWithMeasured() {
   // Send the response to the client
   httpServer.send(200, (F("application/json")), response.c_str());
   LOG((F("Client disonnected")));
-  // digitalWrite(blueChipLedPin, LOW);
+
+  #ifdef serverActionLedPin
+    digitalWrite(serverActionLedPin, LOW);
+  #endif
+  
   // The client will actually be disconnected
   // when the function returns and 'client' object is detroyed
 }
@@ -911,14 +917,18 @@ void handleButtonInterrupt() {
 
 void setupSOC() {
 
-  pinMode(blueChipLedPin, OUTPUT);
   pinMode(buzzerPin, OUTPUT);
   pinMode(greenLedPin, OUTPUT);
   pinMode(yellowLedPin, OUTPUT);
   pinMode(redLedPin, OUTPUT);
 
-  Wire.begin(sdaPin, slcPin);
+  #ifdef serverActionLedPin
+    pinMode(serverActionLedPin, OUTPUT);
+  #endif
 
+  Wire.begin(sdaPin, slcPin);
+  
+  pinMode(buttonPin, INPUT);
   attachInterrupt(buttonPin, handleButtonInterrupt, FALLING);
 
   LOG((F("SOC setup finished")));
@@ -930,7 +940,10 @@ void prepareTestPinsState() {
   digitalWrite(redLedPin, HIGH);
   digitalWrite(yellowLedPin, HIGH);
   digitalWrite(greenLedPin, HIGH);
-  digitalWrite(blueChipLedPin, LOW);
+
+  #ifdef serverActionLedPin
+    digitalWrite(serverActionLedPin, HIGH);
+  #endif
 }
 
 void setup() {
@@ -995,12 +1008,10 @@ void readSocAnalog() {
 void loopMeasure() {
   delay(1e3);
 
-  digitalWrite(blueChipLedPin, HIGH);
   float a = readADSValues();
   LOG((F("analog = ")));
   LOG(a, 8);
   LOG((F(" mV")));
-  digitalWrite(blueChipLedPin, LOW);
 }
 
 void loop_check() {
