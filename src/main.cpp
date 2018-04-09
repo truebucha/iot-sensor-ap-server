@@ -763,7 +763,9 @@ void respondWithState() {
   response += statusReport();
   response += String(F("</p><br>============<p>"));
   response += String(F("<br>Links:"));
-  response += String(F("<br><li><a href=\"\\log\">log</a>"));
+  response += String(F("<br><li><a href=\"\\log\">log</a> - show device log"));
+  response += String(F("<br><li><a href=\"\\update\">update</a> - update device "));
+  response += String(F("<br><li><a href=\"\\update\">measure</a> - make a device do a single measure "));
   response += String(F("</p><br>============"));
   response += String(F("</body></html>"));
 
