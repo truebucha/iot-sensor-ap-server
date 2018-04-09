@@ -1030,15 +1030,15 @@ void beepLoop(BeepType_t beep) {
   switch(beep) {
 
     case SLOW_PULSE_BEEP: 
-      beepCyclesTarget = 30;
+      beepCyclesTarget = 32;
     break;
 
     case MEDIUM_PULSE_BEEP: 
-      beepCyclesTarget = 15;
+      beepCyclesTarget = 16;
     break;
 
     case FAST_PULSE_BEEP: 
-      beepCyclesTarget = 4;
+      beepCyclesTarget = 2;
     break;
 
     case SINGLE_BEEP: 
@@ -1065,6 +1065,8 @@ void eventsLoop() {
 
   LOG((F("[ Running Events Loop")));
 
+  processEvents();
+
   checkWifiConnection();
 
   if (couldSheduleRepeatingEvents()) {
@@ -1082,12 +1084,16 @@ void eventsLoop() {
   // analogCO += 0.00000005;
   // analogCO += 0.000002;
   if (incomingAlarmType != alarmTypeValue) {
-
-    scheduleEvent(ALARM_STATE_DID_CHANGE_EVENT);
+    
     alarmTypeValue = incomingAlarmType;
-  }
+    scheduleEvent(ALARM_STATE_DID_CHANGE_EVENT);
 
-  processEvents();
+    String message = String(F("CO Level = "));
+    message += String(analogCO, DEC);
+    message += String(F(" Alarm Level = "));
+    message += alarmTypeStringUsing(incomingAlarmType);
+    LOG(message);
+  }
 
   LOG((F("Finished Events Loop ]")));
   LOG((F("[---   ---   ---  ---  ---]")));
