@@ -10,6 +10,7 @@
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
+#include <MCP342x.h>
 
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
@@ -22,6 +23,9 @@
 
 #define sdaPin 5
 #define slcPin 4
+
+uint8_t address = 0x68;
+MCP342x adc = MCP342x(address);
 
 #define greenLedPin 13
 #define yellowLedPin 12
@@ -64,8 +68,8 @@ const IPAddress gateway(192,168,4,1);
 const IPAddress subnet(255,255,255,0);
 
 // Station
-const char satationAp[]  = "*";
-const char satationPass[] = "*";
+const char satationAp[]  = "***";
+const char satationPass[] = "***";
 
 const int socLoopCycleDelay = 1e2;
 const int eventsLoopDelay = 2e3;
@@ -76,6 +80,15 @@ unsigned long repeatingEventsNextTimeRun = 0;
 unsigned long eventsLoopNextTimeRun = 0;
 
 int beepLoopCyclesCounter = 0;
+
+typedef enum AnalogSensorType {
+
+    UNDEFINED = 0,
+    MCP = 1,
+    ADS = 2
+} AnalogSensorType_t;
+
+AnalogSensorType_t analogSensorType;
 
 typedef enum EventType {
 
@@ -174,6 +187,8 @@ AlarmType_t checkForAlarmTypeusingCoValue(float coLevel) {
 
     return NO_ALARM;
   }
+
+  return NO_ALARM;
 }
 
 // ============================================
@@ -512,12 +527,50 @@ String statusReport() {
 // read sensor values
 
 void readBmeValues() {
+
   temp = bme.readTemperature();
   pressure = bme.readPressure();
   humidity = bme.readHumidity();
 }
 
-float readADSValues() {
+float readMCPValue() {
+
+  MCP342x::Config status;
+  long value = 0;
+
+  uint8_t readingError = adc.convertAndRead(MCP342x::channel1,
+                                            MCP342x::oneShot,
+                                            MCP342x::resolution18,
+                                            MCP342x::gain8,
+                                            1000000,
+                                            value,
+                                            status);
+
+  LOG((F("Mcp read error: ")));
+  LOG(readingError);
+
+  if (readingError != MCP342x::error_t::errorNone
+      || status.isReady() == false) { 
+
+    return 22;
+  }
+
+// #define ADS1115_MV_2P048            0.062500 // default
+// #define ADS1115_MV_1P024            0.031250
+// #define ADS1115_MV_0P512            0.015625
+// #define ADS1115_MV_0P256            0.007813
+// #define ADS1115_MV_0P256B           0.007813 
+// #define ADS1115_MV_0P256C           0.007813
+
+  float result = value * 0.007813;
+
+  LOG((F("Mcp result: ")));
+  LOG(result);
+
+  return result;
+}
+
+float readADSValue() {
 
   LOG((F("Sensor 1 ************************")));
   // Set the gain (PGA) +/- 1.024v
@@ -527,7 +580,7 @@ float readADSValues() {
   // LOG((F("Counts for sensor 1 is:")));
   
   // // The below method sets the mux and gets a reading.
-  int sensorOneCounts=ads0.getConversionP2N3();  // counts up to 16-bits  
+  int sensorOneCounts = ads0.getConversionP2N3();  // counts up to 16-bits  
   // LOG(sensorOneCounts);
 
   // To turn the counts into a voltage, we can use
@@ -554,12 +607,37 @@ float readADSValues() {
   return value;
 }
 
-float readADSZeroValue() {
+float readCoValue() {
 
+  float result = 1;
+
+  switch (analogSensorType) {
+    case MCP: {
+
+      result = readMCPValue();
+
+    } break;
+
+    case ADS: {
+
+      result = readADSValue();
+
+    } break;
+
+    default: {
+
+    }
+  }
+  return result;
+}
+
+float readCoZeroValue() {
+
+  delay(300);
   float result = 0;
   for (int i=0; i < 5; i++) {
 
-    float measurement = readADSValues();
+    float measurement = readCoValue();
     if (measurement > result) {
 
       result = measurement;
@@ -644,14 +722,14 @@ void doActionForEvent(EventType_t event) {
     case SINGLE_CO_MEASURE_EVENT: 
 
       LOG(((F("{ start SINGLE_CO_MEASURE_EVENT"))));
-      analogCO = readADSValues() - analogCOZero;
+      analogCO = readCoValue() - analogCOZero;
       LOG(((F("made SINGLE_CO_MEASURE_EVENT }"))));
     break;
 
     case SINGLE_CO_ZERO_MEASURE_EVENT:
 
       LOG(((F("{ start SINGLE_CO_ZERO_MEASURE_EVENT"))));
-      analogCOZero = readADSZeroValue();
+      analogCOZero = readCoZeroValue();
       LOG(((F("made SINGLE_CO_ZERO_MEASURE_EVENT }"))));
     break;
 
@@ -879,22 +957,39 @@ void handleButtonInterrupt() {
    if (!bme.begin(0x76)) {
      LOG((F("Could not find a valid bme280 sensor, check wiring!")));
      //ESP.deepSleep( 30 * 1000000, WAKE_RF_DISABLED);
-     return;
-
    } else {
      LOG((F("BME280 found!")));
    }
    LOG((F("Finished with BME setup")));
  }
 
- void setupADS() {
+ bool setupMcp() {
+
+  MCP342x::generalCallReset();
+  delay(1); // MC342x needs 300us to settle, wait 1ms
+  
+  // Check device present
+  Wire.requestFrom(address, (uint8_t)1);
+
+  if (!Wire.available()) {
+     LOG((F("No MCP device found at address ")));
+     return false;
+  } else {
+     LOG((F("Found an MCP device")));
+
+
+     return true;
+  }
+ }
+
+ bool setupADS() {
 
   LOG((F("Starting ADS1115 Setup")));
   ads0.initialize();  
   
   if (!ads0.testConnection()) {
     LOG((F("Could not find a valid ADS1115, check wiring!")));
-    return;
+    return false;
 
   } else {
     LOG((F("ADS1115 found!")));
@@ -916,6 +1011,7 @@ void handleButtonInterrupt() {
   // ads0.setConversionReadyPinMode();
 
   LOG((F("Finished with ADS1115 setup")));
+  return true;
 }
 
 void setupSOC() {
@@ -949,6 +1045,24 @@ void prepareTestPinsState() {
   #endif
 }
 
+AnalogSensorType_t setupAnalogSensor() {
+
+  bool mcpFound = setupMcp();
+  if (mcpFound) {
+
+    return MCP;
+  } else {
+
+    bool adsFound = setupADS();
+    if (adsFound) {
+
+      return ADS;
+    }
+  }
+
+  return UNDEFINED;
+}
+
 void setup() {
 
   #ifdef logToSerial
@@ -960,9 +1074,8 @@ void setup() {
   LOG((F("Starting setup of the device")));
 
   setupSOC();
+  analogSensorType = setupAnalogSensor();
   setupBme();
-
-  setupADS();
 
   setupServer();
   WiFi.mode(WIFI_STA);
@@ -1011,7 +1124,7 @@ void readSocAnalog() {
 void loopMeasure() {
   delay(1e3);
 
-  float a = readADSValues();
+  float a = readCoValue();
   LOG((F("analog = ")));
   LOG(a, 8);
   LOG((F(" mV")));
